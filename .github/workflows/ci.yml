@@ -1,0 +1,18 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm test
+      - name: Seed list is a JSON array of app ids
+        run: node -e "const s=JSON.parse(require('fs').readFileSync('seed.json','utf8'));if(!Array.isArray(s)||s.some(x=>!Number.isInteger(x)||x<=0))process.exit(1)"

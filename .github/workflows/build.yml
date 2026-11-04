@@ -1,0 +1,70 @@
+name: Build public data
+
+on:
+  schedule:
+    # 每 6 小时增量抓取一批（商店 appdetails 有限速，单次约 400 个游戏）
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: Apps to crawl in this run
+        default: '400'
+      achievement-budget:
+        description: Achievement schemas to fetch in this run (needs the STEAM_WEB_API_KEY secret)
+        default: '300'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Test generator
+        run: npm test
+
+      - name: Restore current data
+        run: |
+          mkdir -p out
+          if git fetch --depth=1 origin data:refs/remotes/origin/data; then
+            git archive refs/remotes/origin/data | tar -x -C out
+          fi
+
+      - name: Crawl
+        env:
+          STEAM_WEB_API_KEY: ${{ secrets.STEAM_WEB_API_KEY }}
+        run: >
+          node tools/build.mjs --out out
+          --budget "${{ inputs.budget || '400' }}"
+          --achievement-budget "${{ inputs['achievement-budget'] || '300' }}"
+          --time-limit 300
+
+      - name: Validate
+        run: node tools/validate.mjs out
+
+      # data 分支只保留最新一代（孤儿提交强制推送），仓库历史不会随数据增长
+      - name: Publish data branch
+        working-directory: out
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init -q
+          git checkout -q --orphan data
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "data: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+
+      - name: Purge jsDelivr manifest cache
+        run: curl -fsS "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@data/manifest.json" || true

@@ -1,0 +1,13 @@
+{
+  "name": "steam-stat-public-data",
+  "private": true,
+  "description": "Public game metadata and achievement schemas for Steam Stat, distributed through GitHub and jsDelivr",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "node tools/build.mjs --out out",
+    "validate": "node tools/validate.mjs out"
+  },
+  "engines": { "node": ">=24" }
+}
