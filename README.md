@@ -1,6 +1,6 @@
 # Steam Stat 公共数据
 
-[Steam Stat](https://github.com/DYH1319/steam-stat) 的公共数据层：把游戏元数据（类型、标签、开发商、发行商、发行日期）和成就 schema 预先整理好，通过 GitHub 与 jsDelivr 分发。
+Steam Stat 的**公共数据仓**：把游戏元数据（类型、标签、开发商、发行商、发行日期）和成就 schema 预先整理好，通过 GitHub 与 jsDelivr 分发，由[后端仓](https://github.com/DYH1319/steam-stat)的 Host 在运行时下载。
 
 - 客户端按需下载自己用到的分片，减少对 Steam 的请求次数，国内网络下也能访问（国内网络优化时优先 jsDelivr）。
 - 统计页可以据此按类型、标签汇总游玩时长。
@@ -68,6 +68,16 @@ node tools/validate.mjs out
 想让某个游戏尽快收录，可以提 PR 把它的 AppID 加进 `seed.json`。
 
 不想公开的种子（例如自己的游戏库）放进仓库 Secret `EXTRA_SEED`：JSON 数组，或用逗号 / 空白分隔的 AppID。它与 `seed.json` 同等优先，日志中只输出数量，不输出任何 AppID。注意：抓取到的游戏仍会出现在公开的 `data` 分支里，只是混在热门游戏中，不会单独标出来源。
+
+## 相关仓库
+
+| 称呼 | 仓库 | 说明 |
+|---|---|---|
+| **后端仓** | [`DYH1319/steam-stat`](https://github.com/DYH1319/steam-stat) | .NET Host + Core + IPC 契约；Releases 是下载入口 |
+| **UI 仓** | 私有 | Vue 渲染层与发行构建，以 submodule 引用后端仓 |
+| **Electron.NET fork 仓** | [`DYH1319/Electron.NET`](https://github.com/DYH1319/Electron.NET) | 自维护的 Electron.NET fork，后端仓 submodule `third_party/Electron.NET` |
+| **公共数据仓** | [`DYH1319/steam-stat-public-data`](https://github.com/DYH1319/steam-stat-public-data) | 游戏元数据与成就 schema，Host 运行时下载 |
+| **插件仓** | [`DYH1319/steam-stat-plugins`](https://github.com/DYH1319/steam-stat-plugins) | 存档分析插件，Host 运行时安装 |
 
 ## 许可
 
