@@ -20,6 +20,34 @@ export const MAX_MANIFEST_BYTES = 1024 * 1024
 export const DATASETS = ['apps', 'achievements']
 export const LANGUAGES = ['english', 'schinese']
 
+/**
+ * 解析 AppID 列表：JSON 数组，或用逗号 / 空白分隔的数字。无效项忽略，结果去重并保持顺序。
+ * 用于仓库 Secret EXTRA_SEED（不公开的额外种子，例如维护者自己的游戏库）。
+ */
+export function parseSeedList(text) {
+  const raw = typeof text === 'string' ? text.trim() : ''
+  if (!raw) {
+    return []
+  }
+  let items
+  try {
+    items = raw.startsWith('[') ? JSON.parse(raw) : raw.split(/[\s,]+/)
+  }
+  catch {
+    items = raw.split(/[\s,[\]]+/)
+  }
+  const ids = []
+  const seen = new Set()
+  for (const item of Array.isArray(items) ? items : []) {
+    const id = Number(item)
+    if (Number.isInteger(id) && id > 0 && !seen.has(id)) {
+      seen.add(id)
+      ids.push(id)
+    }
+  }
+  return ids
+}
+
 export function shardOf(appId) {
   return (Number(appId) % SHARD_COUNT).toString(16).padStart(2, '0')
 }

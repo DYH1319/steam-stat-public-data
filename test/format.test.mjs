@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { buildManifest, readExisting, sha256, shardOf, stableStringify, writeDataset } from '../tools/lib/format.mjs'
+import { buildManifest, parseSeedList, readExisting, sha256, shardOf, stableStringify, writeDataset } from '../tools/lib/format.mjs'
 import { parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyTags, parseStoreDetails } from '../tools/lib/steam.mjs'
 import { validate } from '../tools/validate.mjs'
 
@@ -13,6 +13,14 @@ test('shards by appId modulo 256 as two hex digits', () => {
   assert.equal(shardOf(570), '3a')
   assert.equal(shardOf(256), '00')
   assert.equal(shardOf(255), 'ff')
+})
+
+test('parses seed lists from JSON or separated text', () => {
+  assert.deepEqual(parseSeedList('[570, 730, 570, "440", -1, 1.5]'), [570, 730, 440])
+  assert.deepEqual(parseSeedList(' 570,730\n440  105600 '), [570, 730, 440, 105600])
+  assert.deepEqual(parseSeedList('[570, 730'), [570, 730])
+  assert.deepEqual(parseSeedList(undefined), [])
+  assert.deepEqual(parseSeedList(''), [])
 })
 
 test('stable stringify sorts keys and drops undefined', () => {

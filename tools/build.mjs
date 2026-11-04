@@ -5,11 +5,12 @@
 //
 // 选择顺序：seed.json 中尚未抓取的 → SteamSpy 热门列表中尚未抓取的 → 超过 30 天未刷新的（最旧的优先）。
 // 环境变量 STEAM_WEB_API_KEY 存在时同时抓取成就 schema（english + schinese）。
+// 环境变量 EXTRA_SEED（仓库 Secret）是不公开的额外种子，与 seed.json 同等优先；日志中不输出任何 AppID。
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
-import { buildManifest, LANGUAGES, MAX_MANIFEST_BYTES, readExisting, stableStringify, writeDataset } from './lib/format.mjs'
+import { buildManifest, LANGUAGES, MAX_MANIFEST_BYTES, parseSeedList, readExisting, stableStringify, writeDataset } from './lib/format.mjs'
 import { fetchJson, parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyTags, parseStoreDetails, throttle, urls } from './lib/steam.mjs'
 
 const DAY = 86_400
@@ -80,8 +81,13 @@ async function refreshCandidates() {
   state.candidates.pages = pages
 }
 
+const publicSeed = fs.existsSync(args.seed) ? parseSeedList(fs.readFileSync(args.seed, 'utf8')) : []
+const extraSeed = parseSeedList(process.env.EXTRA_SEED)
+const seed = [...new Set([...publicSeed, ...extraSeed])]
+const seedIds = new Set(seed)
+log(`seed: ${publicSeed.length} public, ${extraSeed.length} private`)
+
 function candidateOrder() {
-  const seed = fs.existsSync(args.seed) ? JSON.parse(fs.readFileSync(args.seed, 'utf8')) : []
   const ordered = []
   const seen = new Set()
   const push = (id) => {
@@ -143,7 +149,7 @@ async function crawlApp(appId) {
     tags = parseSteamSpyTags((await fetchJson(urls.steamSpyDetails(appId), { retries: 1 })).body)
   }
   catch (error) {
-    log(`tags ${appId} failed: ${error.message}`)
+    log(`tags failed: ${error.message}`)
     tags = apps.get(appId)?.tags
   }
 
@@ -192,7 +198,7 @@ for (const appId of work) {
   }
   catch (error) {
     failed++
-    log(`app ${appId} failed: ${error.message}`)
+    log(`app failed: ${error.message}`)
   }
 }
 
@@ -200,7 +206,8 @@ if (apiKey) {
   const due = [...apps.entries()]
     .filter(([appId, record]) => record.achievements && now() - (state.apps[appId]?.achievementsAt ?? 0) > REFRESH_AFTER)
     .map(([appId]) => appId)
-    .sort((a, b) => (state.apps[a]?.achievementsAt ?? 0) - (state.apps[b]?.achievementsAt ?? 0))
+    // seed.json 中的游戏优先，其余按上次抓取时间（最旧的优先）
+    .sort((a, b) => (seedIds.has(a) ? 0 : 1) - (seedIds.has(b) ? 0 : 1) || (state.apps[a]?.achievementsAt ?? 0) - (state.apps[b]?.achievementsAt ?? 0))
     .slice(0, achievementBudget)
   log(`fetching achievement schemas for ${due.length} apps`)
   for (const appId of due) {
@@ -211,7 +218,7 @@ if (apiKey) {
       await crawlAchievements(appId)
     }
     catch (error) {
-      log(`achievements ${appId} failed: ${error.message}`)
+      log(`achievements failed: ${error.message}`)
       if (error.message.includes('rejected')) {
         break
       }

@@ -67,6 +67,8 @@ node tools/validate.mjs out
 
 想让某个游戏尽快收录，可以提 PR 把它的 AppID 加进 `seed.json`。
 
+不想公开的种子（例如自己的游戏库）放进仓库 Secret `EXTRA_SEED`：JSON 数组，或用逗号 / 空白分隔的 AppID。它与 `seed.json` 同等优先，日志中只输出数量，不输出任何 AppID。注意：抓取到的游戏仍会出现在公开的 `data` 分支里，只是混在热门游戏中，不会单独标出来源。
+
 ## 许可
 
 生成器代码使用 MIT 许可。数据来自 Steam 商店、Steam Web API 与 SteamSpy，相关名称、描述与图片的权利归 Valve 及各开发商 / 发行商所有，这里只为 Steam Stat 的个人统计用途做缓存分发。
