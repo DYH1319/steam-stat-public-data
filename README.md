@@ -37,6 +37,10 @@ state.json                       生成器进度（客户端不读取）
       "publishers": ["Valve"],
       "releaseDate": "Jul 9, 2013",
       "achievements": 0,                 // 成就数（有成就时）
+      "positive": 2300000,               // SteamSpy 好评数、差评数（有时才写）
+      "negative": 500000,
+      "owners": 200000000,               // SteamSpy 拥有者数量区间的下限
+      "price": 1999,                     // 美区原价（美分，免费游戏没有）
       "fetchedAt": 1793784091
     }
   }
@@ -53,7 +57,7 @@ state.json                       生成器进度（客户端不读取）
 GitHub Actions（`.github/workflows/build.yml`）每 6 小时运行一次，增量抓取一批游戏：
 
 1. 先取 `seed.json` 中尚未抓取的游戏，再取 SteamSpy 热门列表（按拥有者数量，每次刷新几页），最后刷新超过 30 天的记录。
-2. 商店 `appdetails`（english，遇到新类型时再取一次 schinese 的类型名称）与 SteamSpy `appdetails`（标签）。请求按各自的限速串行发送。
+2. 商店 `appdetails`（english，遇到新类型时再取一次 schinese 的类型名称）与 SteamSpy `appdetails`（标签、评测数、拥有者数和美区价格）。请求按各自的限速串行发送。
 3. 为有成就的游戏抓取 `IPlayerService/GetGameAchievements`（english / schinese）。这个接口公开，不需要 API Key，并且带成就集：成就上的 `groupId`、`archived`，以及记录上的 `groups`（语言 → 成就集，只有基础组的游戏没有这个字段）。开发者组和不公开的组不进数据。
 4. `tools/validate.mjs` 校验通过后强制推送 `data` 分支，并刷新 jsDelivr 上清单的缓存。
 

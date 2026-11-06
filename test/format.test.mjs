@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { buildManifest, parseSeedList, readExisting, sha256, shardOf, stableStringify, writeDataset } from '../tools/lib/format.mjs'
-import { parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyTags, parseStoreDetails } from '../tools/lib/steam.mjs'
+import { parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyPopularity, parseSteamSpyTags, parseStoreDetails } from '../tools/lib/steam.mjs'
 import { validate } from '../tools/validate.mjs'
 
 const fixture = name => JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', name), 'utf8'))
@@ -80,6 +80,17 @@ test('parses store appdetails into a compact record', () => {
 test('keeps the most voted SteamSpy tags', () => {
   assert.deepEqual(parseSteamSpyTags({ tags: { MOBA: 100, Strategy: 300, 'Free to Play': 300, Zero: 0 } }), ['Free to Play', 'Strategy', 'MOBA'])
   assert.equal(parseSteamSpyTags({ tags: [] }), undefined)
+})
+
+test('keeps SteamSpy popularity and leaves out what is missing', () => {
+  assert.deepEqual(
+    parseSteamSpyPopularity({ positive: 713071, negative: 131850, owners: '20,000,000 .. 50,000,000', initialprice: '5999' }),
+    { positive: 713071, negative: 131850, owners: 20000000, price: 5999 },
+  )
+  assert.deepEqual(parseSteamSpyPopularity({ positive: 0, negative: 'n/a', owners: '0 .. 20,000', initialprice: '0' }), {})
+  assert.deepEqual(parseSteamSpyPopularity(undefined), {})
+  // 抓取失败时要能把旧记录的数字原样带回来
+  assert.deepEqual(parseSteamSpyPopularity({ positive: 10, owners: 2000, initialprice: 999 }), { positive: 10, owners: 2000, price: 999 })
 })
 
 test('orders SteamSpy candidates by owners', () => {

@@ -1,4 +1,4 @@
-// 数据来源：Steam 商店 appdetails（类型 / 开发商 / 发行商 / 发行日期）、SteamSpy（标签与热门游戏列表）、
+// 数据来源：Steam 商店 appdetails（类型 / 开发商 / 发行商 / 发行日期）、SteamSpy（标签、评测数、拥有者数、美区价格与热门游戏列表）、
 // Steam Web API IPlayerService/GetGameAchievements（成就 schema 和成就集，不需要 Key）。
 // 解析函数是纯函数，只保留客户端需要的字段，并对长度做限制。
 
@@ -94,6 +94,24 @@ export function parseSteamSpyTags(json) {
   return list.length ? list : undefined
 }
 
+/**
+ * SteamSpy appdetails → 好评数、差评数、拥有者数量的下限和美区原价（美分）。
+ * 没有的字段不写，体积和旧记录一样。客户端用来算小众指数。
+ */
+export function parseSteamSpyPopularity(json) {
+  const count = (value) => {
+    const number = Number(value)
+    return Number.isInteger(number) && number > 0 ? number : undefined
+  }
+  const owners = ownersLowerBound(json?.owners)
+  return Object.fromEntries(Object.entries({
+    positive: count(json?.positive),
+    negative: count(json?.negative),
+    owners: owners > 0 ? owners : undefined,
+    price: count(json?.initialprice),
+  }).filter(([, value]) => value !== undefined))
+}
+
 /** SteamSpy request=all 的一页 → 按拥有者数量排序的 appId。 */
 export function parseSteamSpyAll(json) {
   if (!json || typeof json !== 'object') {
@@ -107,6 +125,9 @@ export function parseSteamSpyAll(json) {
 }
 
 function ownersLowerBound(value) {
+  if (typeof value === 'number') {
+    return value
+  }
   const match = typeof value === 'string' ? value.replaceAll(',', '').match(/^\s*(\d+)/) : null
   return match ? Number(match[1]) : 0
 }

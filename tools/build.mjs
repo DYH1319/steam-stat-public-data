@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { buildManifest, LANGUAGES, MAX_MANIFEST_BYTES, parseSeedList, readExisting, stableStringify, writeDataset } from './lib/format.mjs'
-import { fetchJson, parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyTags, parseStoreDetails, throttle, urls } from './lib/steam.mjs'
+import { fetchJson, parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyPopularity, parseSteamSpyTags, parseStoreDetails, throttle, urls } from './lib/steam.mjs'
 
 const DAY = 86_400
 const REFRESH_AFTER = 30 * DAY
@@ -143,16 +143,21 @@ async function crawlApp(appId) {
   }
 
   let tags
+  let popularity
   try {
     await spyGate()
-    tags = parseSteamSpyTags((await fetchJson(urls.steamSpyDetails(appId), { retries: 1 })).body)
+    const body = (await fetchJson(urls.steamSpyDetails(appId), { retries: 1 })).body
+    tags = parseSteamSpyTags(body)
+    popularity = parseSteamSpyPopularity(body)
   }
   catch (error) {
     log(`tags failed: ${error.message}`)
-    tags = apps.get(appId)?.tags
+    const previous = apps.get(appId)
+    tags = previous?.tags
+    popularity = parseSteamSpyPopularity({ positive: previous?.positive, negative: previous?.negative, owners: previous?.owners, initialprice: previous?.price })
   }
 
-  apps.set(appId, { ...parsed.record, tags, fetchedAt: now() })
+  apps.set(appId, { ...parsed.record, tags, ...popularity, fetchedAt: now() })
   state.apps[appId] = { ...state.apps[appId], detailsAt: now(), missing: false }
   return true
 }
