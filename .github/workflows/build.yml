@@ -10,7 +10,7 @@ on:
         description: Apps to crawl in this run
         default: '400'
       achievement-budget:
-        description: Achievement schemas to fetch in this run (needs the STEAM_WEB_API_KEY secret)
+        description: Achievement schemas to fetch in this run
         default: '300'
 
 permissions:
@@ -43,7 +43,6 @@ jobs:
 
       - name: Crawl
         env:
-          STEAM_WEB_API_KEY: ${{ secrets.STEAM_WEB_API_KEY }}
           # 不公开的额外种子（AppID 列表），见 README
           EXTRA_SEED: ${{ secrets.EXTRA_SEED }}
         run: >

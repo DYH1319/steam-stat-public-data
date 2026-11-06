@@ -90,17 +90,44 @@ test('orders SteamSpy candidates by owners', () => {
   }), [570, 10, 7])
 })
 
-test('parses achievement schemas and drops non-https icons', () => {
-  const list = parseSchema({
-    game: {
-      availableGameStats: {
-        achievements: [
-          { name: 'WIN', displayName: 'Winner', description: 'Win once', hidden: 0, icon: 'https://cdn.akamai.steamstatic.com/a.jpg', icongray: 'javascript:alert(1)' },
-          { name: '', displayName: 'skip' },
-        ],
-      },
+test('parses achievement schemas and builds https icon urls', () => {
+  const parsed = parseSchema({
+    response: {
+      achievements: [
+        { internal_name: 'WIN', localized_name: 'Winner', localized_desc: 'Win once', hidden: false, icon: 'abc123.jpg', icon_gray: 'javascript:alert(1)', groupid: 0, archived: false },
+        { internal_name: '', localized_name: 'skip' },
+      ],
+      groups: [{ groupid: 0, localized_name: '', dlcappid: 0, archived: false, developeronly: false, order: 0, ispublic: true }],
     },
+  }, 570)
+  // 只有基础组的游戏和旧格式完全一样，已发布的客户端照常读取
+  assert.deepEqual(parsed, {
+    achievements: [{ name: 'WIN', displayName: 'Winner', description: 'Win once', icon: 'https://shared.fastly.steamstatic.com/community_assets/images/apps/570/abc123.jpg', iconGray: '', hidden: false }],
+    groups: undefined,
   })
-  assert.deepEqual(list, [{ name: 'WIN', displayName: 'Winner', description: 'Win once', icon: 'https://cdn.akamai.steamstatic.com/a.jpg', iconGray: '', hidden: false }])
-  assert.equal(parseSchema({ game: {} }), undefined)
+  assert.equal(parseSchema({ response: {} }, 570), undefined)
+})
+
+test('keeps achievement sets and drops developer-only groups', () => {
+  const parsed = parseSchema({
+    response: {
+      achievements: [
+        { internal_name: 'BASE', groupid: 0 },
+        { internal_name: 'DLC', groupid: 1, archived: true },
+        { internal_name: 'DEV', groupid: 2 },
+        { internal_name: 'PRIVATE', groupid: 3 },
+      ],
+      groups: [
+        { groupid: 0, localized_name: '', dlcappid: 0, ispublic: true },
+        { groupid: 1, localized_name: 'Royal Court', dlcappid: 1303182, archived: true, order: 2, ispublic: true },
+        { groupid: 2, localized_name: 'Dev', developeronly: true, ispublic: true },
+        { groupid: 3, localized_name: 'Private', ispublic: false },
+      ],
+    },
+  }, 1158310)
+  assert.deepEqual(parsed.achievements.map(item => [item.name, item.groupId, item.archived]), [['BASE', undefined, undefined], ['DLC', 1, true]])
+  assert.deepEqual(parsed.groups, [
+    { id: 0, name: '' },
+    { id: 1, name: 'Royal Court', dlcAppId: 1303182, archived: true, order: 2 },
+  ])
 })

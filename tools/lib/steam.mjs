@@ -1,11 +1,13 @@
 // 数据来源：Steam 商店 appdetails（类型 / 开发商 / 发行商 / 发行日期）、SteamSpy（标签与热门游戏列表）、
-// Steam Web API GetSchemaForGame（成就 schema，需要 STEAM_WEB_API_KEY）。
+// Steam Web API IPlayerService/GetGameAchievements（成就 schema 和成就集，不需要 Key）。
 // 解析函数是纯函数，只保留客户端需要的字段，并对长度做限制。
 
 const USER_AGENT = 'steam-stat-public-data (+https://github.com/DYH1319/steam-stat-public-data)'
 const MAX_TEXT = 512
 const MAX_TAGS = 12
 const MAX_ACHIEVEMENTS = 5000
+// Steam 的上限：每个应用 40 个成就集
+const MAX_GROUPS = 40
 
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -109,24 +111,52 @@ function ownersLowerBound(value) {
   return match ? Number(match[1]) : 0
 }
 
-/** GetSchemaForGame → 成就列表（图标为完整 https 地址）。 */
-export function parseSchema(json) {
-  const list = json?.game?.availableGameStats?.achievements
-  if (!Array.isArray(list)) {
+/**
+ * GetGameAchievements → 成就列表与成就集。接口给的图标是文件名，这里拼成完整 https 地址，
+ * 已发布的客户端只接受 https 地址。开发者组和不公开的组连同其中的成就一起丢弃。
+ * 只有基础组的游戏不写 groups，默认值（groupId 0、未归档）不写进成就，体积和旧格式一样。
+ */
+export function parseSchema(json, appId) {
+  const response = json?.response
+  if (!Array.isArray(response?.achievements)) {
     return undefined
   }
-  const achievements = list
-    .filter(item => typeof item?.name === 'string' && item.name.length > 0)
+  const rawGroups = Array.isArray(response.groups) ? response.groups : []
+  const dropped = new Set(rawGroups.filter(group => group?.developeronly === true || group?.ispublic === false).map(group => group.groupid))
+  const achievements = response.achievements
+    .filter(item => typeof item?.internal_name === 'string' && item.internal_name.length > 0 && !dropped.has(item.groupid ?? 0))
     .slice(0, MAX_ACHIEVEMENTS)
     .map(item => ({
-      name: item.name.slice(0, 128),
-      displayName: text(item.displayName) ?? item.name.slice(0, 128),
-      description: text(item.description) ?? '',
-      icon: httpsOnly(item.icon),
-      iconGray: httpsOnly(item.icongray),
-      hidden: item.hidden === 1 || item.hidden === true,
+      name: item.internal_name.slice(0, 128),
+      displayName: text(item.localized_name) || item.internal_name.slice(0, 128),
+      description: text(item.localized_desc) ?? '',
+      icon: iconUrl(item.icon, appId),
+      iconGray: iconUrl(item.icon_gray, appId),
+      hidden: item.hidden === true,
+      ...(item.groupid ? { groupId: item.groupid } : {}),
+      ...(item.archived === true ? { archived: true } : {}),
     }))
-  return achievements.length ? achievements : undefined
+  if (achievements.length === 0) {
+    return undefined
+  }
+  const groups = rawGroups
+    .filter(group => Number.isInteger(group?.groupid) && !dropped.has(group.groupid))
+    .slice(0, MAX_GROUPS)
+    .map(group => ({
+      id: group.groupid,
+      name: text(group.localized_name) ?? '',
+      ...(group.dlcappid ? { dlcAppId: group.dlcappid } : {}),
+      ...(group.archived === true ? { archived: true } : {}),
+      ...(group.order ? { order: group.order } : {}),
+    }))
+  const onlyBase = groups.every(group => group.id === 0 && !group.dlcAppId && !group.archived)
+  return { achievements, groups: onlyBase ? undefined : groups }
+}
+
+function iconUrl(value, appId) {
+  return typeof value === 'string' && /^[\w-]{1,128}\.(?:jpg|png|webp)$/i.test(value)
+    ? `https://shared.fastly.steamstatic.com/community_assets/images/apps/${appId}/${value}`
+    : httpsOnly(value)
 }
 
 function httpsOnly(value) {
@@ -137,5 +167,5 @@ export const urls = {
   storeDetails: (appId, language) => `https://store.steampowered.com/api/appdetails?appids=${appId}&l=${language}&cc=us`,
   steamSpyDetails: appId => `https://steamspy.com/api.php?request=appdetails&appid=${appId}`,
   steamSpyAll: page => `https://steamspy.com/api.php?request=all&page=${page}`,
-  schema: (appId, language, key) => `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?key=${encodeURIComponent(key)}&appid=${appId}&l=${language}`,
+  schema: (appId, language) => `https://api.steampowered.com/IPlayerService/GetGameAchievements/v1/?appid=${appId}&language=${language}`,
 }

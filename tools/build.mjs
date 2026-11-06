@@ -4,7 +4,7 @@
 //   node tools/build.mjs --out out [--budget 400] [--achievement-budget 300] [--time-limit 300] [--candidate-pages 3]
 //
 // 选择顺序：seed.json 中尚未抓取的 → SteamSpy 热门列表中尚未抓取的 → 超过 30 天未刷新的（最旧的优先）。
-// 环境变量 STEAM_WEB_API_KEY 存在时同时抓取成就 schema（english + schinese）。
+// 同时抓取成就 schema 和成就集（english + schinese）。
 // 环境变量 EXTRA_SEED（仓库 Secret）是不公开的额外种子，与 seed.json 同等优先；日志中不输出任何 AppID。
 
 import fs from 'node:fs'
@@ -34,7 +34,6 @@ const outDir = path.resolve(args.out)
 const budget = Number(args.budget)
 const achievementBudget = Number(args['achievement-budget'])
 const deadline = Date.now() + Number(args['time-limit']) * 60_000
-const apiKey = process.env.STEAM_WEB_API_KEY?.trim()
 const now = () => Math.floor(Date.now() / 1000)
 const log = (...parts) => console.log(new Date().toISOString(), ...parts)
 
@@ -160,20 +159,24 @@ async function crawlApp(appId) {
 
 async function crawlAchievements(appId) {
   const languages = {}
+  const groups = {}
   for (const language of LANGUAGES) {
     await apiGate()
-    const { status, body } = await fetchJson(urls.schema(appId, language, apiKey), { retries: 2 })
+    const { status, body } = await fetchJson(urls.schema(appId, language), { retries: 2 })
     if (status === 403) {
-      throw new Error('STEAM_WEB_API_KEY was rejected')
+      throw new Error('achievement schema request was rejected')
     }
-    const list = parseSchema(body)
-    if (list) {
-      languages[language] = list
+    const parsed = parseSchema(body, appId)
+    if (parsed) {
+      languages[language] = parsed.achievements
+      if (parsed.groups) {
+        groups[language] = parsed.groups
+      }
     }
   }
   state.apps[appId] = { ...state.apps[appId], achievementsAt: now() }
   if (Object.keys(languages).length) {
-    achievements.set(appId, { fetchedAt: now(), languages })
+    achievements.set(appId, { fetchedAt: now(), languages, ...(Object.keys(groups).length ? { groups } : {}) })
   }
   else {
     achievements.delete(appId)
@@ -202,31 +205,26 @@ for (const appId of work) {
   }
 }
 
-if (apiKey) {
-  const due = [...apps.entries()]
-    .filter(([appId, record]) => record.achievements && now() - (state.apps[appId]?.achievementsAt ?? 0) > REFRESH_AFTER)
-    .map(([appId]) => appId)
-    // seed.json 中的游戏优先，其余按上次抓取时间（最旧的优先）
-    .sort((a, b) => (seedIds.has(a) ? 0 : 1) - (seedIds.has(b) ? 0 : 1) || (state.apps[a]?.achievementsAt ?? 0) - (state.apps[b]?.achievementsAt ?? 0))
-    .slice(0, achievementBudget)
-  log(`fetching achievement schemas for ${due.length} apps`)
-  for (const appId of due) {
-    if (Date.now() > deadline) {
+const due = [...apps.entries()]
+  .filter(([appId, record]) => record.achievements && now() - (state.apps[appId]?.achievementsAt ?? 0) > REFRESH_AFTER)
+  .map(([appId]) => appId)
+  // seed.json 中的游戏优先，其余按上次抓取时间（最旧的优先）
+  .sort((a, b) => (seedIds.has(a) ? 0 : 1) - (seedIds.has(b) ? 0 : 1) || (state.apps[a]?.achievementsAt ?? 0) - (state.apps[b]?.achievementsAt ?? 0))
+  .slice(0, achievementBudget)
+log(`fetching achievement schemas for ${due.length} apps`)
+for (const appId of due) {
+  if (Date.now() > deadline) {
+    break
+  }
+  try {
+    await crawlAchievements(appId)
+  }
+  catch (error) {
+    log(`achievements failed: ${error.message}`)
+    if (error.message.includes('rejected')) {
       break
     }
-    try {
-      await crawlAchievements(appId)
-    }
-    catch (error) {
-      log(`achievements failed: ${error.message}`)
-      if (error.message.includes('rejected')) {
-        break
-      }
-    }
   }
-}
-else {
-  log('STEAM_WEB_API_KEY is not set; skipping achievement schemas')
 }
 
 const shards = {

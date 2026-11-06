@@ -54,7 +54,7 @@ GitHub Actions（`.github/workflows/build.yml`）每 6 小时运行一次，增�
 
 1. 先取 `seed.json` 中尚未抓取的游戏，再取 SteamSpy 热门列表（按拥有者数量，每次刷新几页），最后刷新超过 30 天的记录。
 2. 商店 `appdetails`（english，遇到新类型时再取一次 schinese 的类型名称）与 SteamSpy `appdetails`（标签）。请求按各自的限速串行发送。
-3. 配置了仓库 Secret `STEAM_WEB_API_KEY` 时，为有成就的游戏抓取 `GetSchemaForGame`（english / schinese）。没有配置时跳过成就。
+3. 为有成就的游戏抓取 `IPlayerService/GetGameAchievements`（english / schinese）。这个接口公开，不需要 API Key，并且带成就集：成就上的 `groupId`、`archived`，以及记录上的 `groups`（语言 → 成就集，只有基础组的游戏没有这个字段）。开发者组和不公开的组不进数据。
 4. `tools/validate.mjs` 校验通过后强制推送 `data` 分支，并刷新 jsDelivr 上清单的缓存。
 
 本地运行：
