@@ -1,0 +1,65 @@
+name: Sample player counts
+
+on:
+  schedule:
+    # 每天同一时刻采样，曲线才可比
+    - cron: '7 12 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Apps to sample
+        default: '2000'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: player-history
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Test generator
+        run: npm test
+
+      - name: Restore data
+        run: |
+          mkdir -p out
+          git fetch --depth=1 origin data:refs/remotes/origin/data
+          git archive refs/remotes/origin/data | tar -x -C out
+
+      # history 分支是普通分支，只追加提交，不强制推送
+      - name: Check out history
+        run: |
+          if git fetch origin history:refs/remotes/origin/history; then
+            git worktree add history refs/remotes/origin/history
+          else
+            git worktree add --orphan -b history history
+          fi
+          cp history/index.json previous-index.json || true
+
+      - name: Sample
+        run: node tools/history.mjs --data out --out history --limit "${{ inputs.limit || '2000' }}"
+
+      - name: Validate
+        run: node tools/validate-history.mjs history --previous previous-index.json
+
+      - name: Publish
+        working-directory: history
+        run: |
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "players: $(date -u +%Y-%m-%d)"
+          git push -q origin HEAD:history
+
+      - name: Purge jsDelivr index cache
+        run: curl -fsS "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@history/index.json" || true

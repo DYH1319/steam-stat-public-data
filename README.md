@@ -52,6 +52,34 @@ state.json                       生成器进度（客户端不读取）
 - `https://raw.githubusercontent.com/DYH1319/steam-stat-public-data/data/manifest.json`
 - `https://cdn.jsdelivr.net/gh/DYH1319/steam-stat-public-data@data/manifest.json`
 
+## 在线人数历史（history 分支）
+
+全球在线人数没有官方历史，这里每天 UTC 12:07 采样一次拥有者最多的约 2000 款游戏，新用户第一天就能看到曲线。库里的冷门游戏由客户端自己采样。
+
+`history` 是普通分支，**只追加**，和 `data` 分支相反：
+
+```
+index.json                 updatedAt、当月覆盖的 apps、每个月每个分片的 SHA-256 与大小
+players/{yyyy-MM}/{x}.json 一个月的分片，x = appId % 16（一位十六进制）
+```
+
+```jsonc
+// players/2026-11/a.json
+{
+  "format": "steam-stat-public-data/players",
+  "version": 1,
+  "month": "2026-11",
+  "shard": "a",
+  "apps": {
+    "570": [429379, null, 431020]   // 下标是日期减一，null 是那天没采到
+  }
+}
+```
+
+月份结束后文件不再变化，CDN 和客户端都按这个假设永久缓存，`tools/validate-history.mjs` 发布前会检查。没有人数数据的游戏不写，0 表示真的没人在玩。
+
+分发地址：把 `data` 换成 `history`。jsDelivr 单个包的上限是 50 MB，按现在的覆盖量大约能用十年，到时要缩小覆盖或者换分片。
+
 ## 构建
 
 GitHub Actions（`.github/workflows/build.yml`）每 6 小时运行一次，增量抓取一批游戏：

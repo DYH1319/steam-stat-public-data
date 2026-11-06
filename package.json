@@ -7,7 +7,9 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "build": "node tools/build.mjs --out out",
-    "validate": "node tools/validate.mjs out"
+    "validate": "node tools/validate.mjs out",
+    "history": "node tools/history.mjs --data out --out history",
+    "validate:history": "node tools/validate-history.mjs history"
   },
   "engines": { "node": ">=24" }
 }
