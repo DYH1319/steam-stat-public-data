@@ -10,6 +10,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
+import { achievementSchemaDue, fitAchievementRecords, normalizeAchievementRecord, normalizeAchievementRecords } from './lib/achievements.mjs'
 import { buildManifest, LANGUAGES, MAX_MANIFEST_BYTES, parseSeedList, readExisting, stableStringify, writeDataset } from './lib/format.mjs'
 import { fetchJson, parseGenreNames, parseSchema, parseSteamSpyAll, parseSteamSpyPopularity, parseSteamSpyTags, parseStoreDetails, throttle, urls } from './lib/steam.mjs'
 
@@ -17,6 +18,7 @@ const DAY = 86_400
 const REFRESH_AFTER = 30 * DAY
 const MISSING_RETRY_AFTER = 90 * DAY
 const CANDIDATE_REFRESH_AFTER = 7 * DAY
+const ACHIEVEMENT_DEFERRED_RETRY_AFTER = 7 * DAY
 const MAX_CANDIDATE_PAGES = 40
 
 const { values: args } = parseArgs({
@@ -46,7 +48,9 @@ const apiGate = throttle(250)
 fs.mkdirSync(outDir, { recursive: true })
 const existing = readExisting(outDir)
 const apps = existing.apps
-const achievements = existing.achievements
+const publishedAchievements = normalizeAchievementRecords(existing.achievements)
+const achievements = new Map(publishedAchievements)
+const achievementTouched = new Map()
 const genres = existing.genres
 const state = existing.state
 
@@ -181,10 +185,13 @@ async function crawlAchievements(appId) {
   }
   state.apps[appId] = { ...state.apps[appId], achievementsAt: now() }
   if (Object.keys(languages).length) {
-    achievements.set(appId, { fetchedAt: now(), languages, ...(Object.keys(groups).length ? { groups } : {}) })
+    const record = normalizeAchievementRecord({ fetchedAt: now(), languages, ...(Object.keys(groups).length ? { groups } : {}) })
+    achievements.set(appId, record)
+    achievementTouched.set(appId, record)
   }
   else {
     achievements.delete(appId)
+    achievementTouched.set(appId, null)
   }
 }
 
@@ -211,7 +218,12 @@ for (const appId of work) {
 }
 
 const due = [...apps.entries()]
-  .filter(([appId, record]) => record.achievements && now() - (state.apps[appId]?.achievementsAt ?? 0) > REFRESH_AFTER)
+  .filter(([appId, record]) => {
+    if (!record.achievements) {
+      return false
+    }
+    return achievementSchemaDue(state.apps[appId], now(), REFRESH_AFTER, ACHIEVEMENT_DEFERRED_RETRY_AFTER)
+  })
   .map(([appId]) => appId)
   // seed.json 中的游戏优先，其余按上次抓取时间（最旧的优先）
   .sort((a, b) => (seedIds.has(a) ? 0 : 1) - (seedIds.has(b) ? 0 : 1) || (state.apps[a]?.achievementsAt ?? 0) - (state.apps[b]?.achievementsAt ?? 0))
@@ -232,9 +244,31 @@ for (const appId of due) {
   }
 }
 
+const achievementFit = fitAchievementRecords({
+  baseline: publishedAchievements,
+  current: achievements,
+  touched: achievementTouched,
+  priority: due,
+})
+const deferredAchievements = new Set([...achievementFit.deferred, ...achievementFit.evicted])
+for (const appId of achievementTouched.keys()) {
+  const info = { ...state.apps[appId] }
+  if (deferredAchievements.has(appId)) {
+    info.achievementDeferredAt = now()
+  }
+  else {
+    delete info.achievementDeferredAt
+  }
+  state.apps[appId] = info
+}
+if (achievementFit.resizedShards.length) {
+  log(`achievement shard cap: ${achievementFit.deferred.length} deferred, ${achievementFit.evicted.length} evicted in ${achievementFit.resizedShards.length} shards (${achievementFit.resizedShards.join(', ')})`)
+}
+const fittedAchievements = achievementFit.records
+
 const shards = {
   apps: writeDataset(outDir, 'apps', apps),
-  achievements: writeDataset(outDir, 'achievements', achievements),
+  achievements: writeDataset(outDir, 'achievements', fittedAchievements),
 }
 const manifest = buildManifest({ generatedAt: now(), repository: process.env.GITHUB_REPOSITORY, genres, shards })
 const manifestText = stableStringify(manifest)
@@ -243,4 +277,4 @@ if (Buffer.byteLength(manifestText) > MAX_MANIFEST_BYTES) {
 }
 fs.writeFileSync(path.join(outDir, 'manifest.json'), manifestText)
 fs.writeFileSync(path.join(outDir, 'state.json'), stableStringify(state))
-log(`done: ${crawled} updated, ${failed} failed, ${apps.size} apps, ${achievements.size} achievement schemas`)
+log(`done: ${crawled} updated, ${failed} failed, ${apps.size} apps, ${fittedAchievements.size} achievement schemas`)

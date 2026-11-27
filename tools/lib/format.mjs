@@ -67,6 +67,10 @@ export function sha256(text) {
   return createHash('sha256').update(text).digest('hex')
 }
 
+export function serializeShard(dataset, shard, apps) {
+  return stableStringify({ format: `${FORMAT}/${dataset}`, version: VERSION, shard, apps })
+}
+
 /**
  * 写出一个数据集：按 appId 分片，每个分片一个带哈希的文件，删除不再引用的旧文件。
  * records: Map<appId, record>
@@ -87,7 +91,7 @@ export function writeDataset(outDir, dataset, records) {
   const keep = new Set()
   for (const shard of [...byShard.keys()].sort()) {
     const apps = byShard.get(shard)
-    const text = stableStringify({ format: `${FORMAT}/${dataset}`, version: VERSION, shard, apps })
+    const text = serializeShard(dataset, shard, apps)
     if (Buffer.byteLength(text) > MAX_SHARD_BYTES) {
       throw new Error(`${dataset} shard ${shard} exceeds ${MAX_SHARD_BYTES} bytes`)
     }
